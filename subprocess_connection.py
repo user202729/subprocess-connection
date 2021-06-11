@@ -23,8 +23,8 @@ class Connection:
 			#	) and (
 			#		process.stdout is None or isinstance(process.stdout, BinaryIO)
 			#	), "Subprocess pipes must be opened in binary mode!"
-			self._send_pipe=process.stdin
-			self._recv_pipe=process.stdout
+			self._send_pipe=process.stdin  # type: ignore
+			self._recv_pipe=process.stdout  # type: ignore
 		else:
 			self._send_pipe=sys.stdout.buffer
 			self._recv_pipe=sys.stdin.buffer
