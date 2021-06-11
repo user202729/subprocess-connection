@@ -13,10 +13,15 @@ if len(sys.argv)==1:
 	print("1 ==", connection.recv())
 
 else:
-	# child process
-	assert sys.argv[1:]==["0"]
-	connection=Connection()
-	connection.send(1)
-	print("2 ==", connection.recv())
+	assert len(sys.argv)==2
+
+	if sys.argv[1]=="0":
+		# child process
+		connection=Connection()
+		connection.send(1)
+		print("2 ==", connection.recv())
+
+	else:
+		assert False
 
 
