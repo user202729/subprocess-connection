@@ -170,7 +170,7 @@ class Message:
 		self._exec_running: bool=False
 		self._exec_running_lock: Lock=Lock()
 
-		self._exec_thread: Thread=Thread(target=self.exec_)
+		self._exec_thread: Optional[Thread]=None
 
 		self.call[_FUNCTION]=self._on_func_called
 		self.call[_FUNCTION_RESPONSE]=self._on_func_response
@@ -215,10 +215,14 @@ class Message:
 		"""
 		del self._funcs[key]
 
-	def exec_(self, suppress_call_errors: bool=True)->None:
+	def exec_(self, suppress_call_errors: bool=True, on_stop: Callable[[], None]=lambda: None)->None:
 		"""
 		Listen for and execute requests.
 		Usually this is run in a separate thread, but it's not required.
+
+		Parameters:
+			suppress_call_errors: Whether to print a log to stdout instead of raising an error when there's an error.
+			on_stop: Function to call when the exec stops.
 		"""
 		with self._exec_running_lock:
 			if self._exec_running:
@@ -249,13 +253,18 @@ class Message:
 		finally:
 			with self._exec_running_lock:
 				self._exec_running=False
+			on_stop()
 
-	def start(self)->None:
+	def start(self, *args, **kwargs)->None:
 		"""
 		Run self.exec_() in another thread.
 
 		It must be called at most once per Message object.
+
+		Accepted arguments are the same as `exec_` function.
 		"""
+		assert self._exec_thread is None
+		self._exec_thread=Thread(target=self.exec_, args=args, kwargs=kwargs)
 		self._exec_thread.start()
 
 	def stop(self)->None:
