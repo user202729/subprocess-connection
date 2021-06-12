@@ -171,11 +171,13 @@ class Message:
 		self.call[_FUNCTION_RESPONSE]=self._on_func_response
 
 	def set_call(self, key: Any, value: Callable)->None:
-		assert key not in self._calls
+		if key in self._calls:
+			raise KeyError(key)
 		self._calls[key]=value
 
 	def set_func(self, key: Any, value: Callable)->None:
-		assert key not in self._funcs
+		if key in self._funcs:
+			raise KeyError(key)
 		self._funcs[key]=value
 
 	def register_call(self, value: Callable)->None:
