@@ -2,6 +2,7 @@ import sys
 import io
 from typing import Optional, Any, BinaryIO, Callable, Dict, Union
 from threading import Lock, Thread
+import functools
 from subprocess import Popen
 import pickle
 from queue import Queue
@@ -104,6 +105,10 @@ _FUNCTION: str="_FUNCTION"
 _FUNCTION_RESPONSE: str="_FUNCTION_RESPONSE"
 
 
+CallbackFunc=Callable[[Any], None]
+
+FuncWithCallback=Callable[[CallbackFunc, tuple, dict], None]
+
 class Message:
 	def __init__(self, x: Union[Connection, Popen]=None)->None:
 		if x is None:
@@ -114,7 +119,7 @@ class Message:
 			connection=Connection(x)
 		self._connection: Connection=connection
 		self._calls: Dict[Any, Callable]={}
-		self._funcs: Dict[Any, Callable]={}
+		self._funcs: Dict[Any, FuncWithCallback]={}
 
 		message: Message=self
 
@@ -175,21 +180,39 @@ class Message:
 			raise KeyError(key)
 		self._calls[key]=value
 
-	def set_func(self, key: Any, value: Callable)->None:
-		if key in self._funcs:
-			raise KeyError(key)
-		self._funcs[key]=value
-
 	def register_call(self, value: Callable)->None:
 		self.set_call(value.__name__, value)
-
-	def register_func(self, value: Callable)->None:
-		self.set_func(value.__name__, value)
 
 	def remove_call(self, key: Any)->None:
 		del self._calls[key]
 
+	def set_func_with_callback(self, key: Any, value: FuncWithCallback)->None:
+		"""
+		`value`: the function to call. Should have the signature:
+		`(callback: CallbackFunc, args: tuple, kwargs: dict) -> None`.
+
+		It must call the callback function with the result (can be `None`).
+		"""
+		if key in self._funcs:
+			raise KeyError(key)
+		self._funcs[key]=value
+
+	def register_func_with_callback(self, value: FuncWithCallback)->None:
+		self.set_func_with_callback(value.__name__, value)
+
+	def set_func(self, key: Any, value: Callable)->None:
+		def wrapper(callback: Callable[[Any], None], args: tuple, kwargs: dict)->None:
+			result=value(*args, **kwargs)
+			callback(result)
+		self.set_func_with_callback(key, wrapper)
+
+	def register_func(self, value: Callable)->None:
+		self.set_func(value.__name__, value)
+
 	def remove_func(self, key: Any)->None:
+		"""
+		Remove a registered function. Might or might not have callback.
+		"""
 		del self._funcs[key]
 
 	def exec_(self, suppress_call_errors: bool=True)->None:
@@ -259,7 +282,7 @@ class Message:
 
 	def func_remote(self, key: Any, args: tuple, kwargs: dict)->Any:
 		"""
-		Call a remote function.
+		Call a remote function. Might or might not have callback.
 		"""
 		with self._response_counter_lock:
 			response_counter=self._response_counter=self._response_counter+1
@@ -273,12 +296,17 @@ class Message:
 		del self._func_response_queues[response_counter]
 		return result
 
-	def _on_func_called(self, key: Any, args: list, kwargs: dict, response_counter: int)->None:
+	def _on_func_done(self, response_counter: int, result: Any)->None:
+		"""
+		Internal function, called when a function on this end returns a value.
+		"""
+		self.call_remote(_FUNCTION_RESPONSE, (response_counter, result), {})
+
+	def _on_func_called(self, key: Any, args: tuple, kwargs: dict, response_counter: int)->None:
 		"""
 		Internal function, called when a function on this end is called.
 		"""
-		result=self._funcs[key](*args, **kwargs)
-		self.call_remote(_FUNCTION_RESPONSE, (response_counter, result), {})
+		self._funcs[key](functools.partial(self._on_func_done, response_counter), args, kwargs)
 
 	def _on_func_response(self, response_counter: Any, result: Any)->None:
 		"""
