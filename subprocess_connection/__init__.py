@@ -250,9 +250,15 @@ class Message:
 		return self._func_proxy
 
 	def call_remote(self, key: Any, args: tuple, kwargs: dict)->None:
+		"""
+		Call a remote callable.
+		"""
 		self._connection.send((key, args, kwargs))
 
 	def func_remote(self, key: Any, args: tuple, kwargs: dict)->Any:
+		"""
+		Call a remote function.
+		"""
 		with self._response_counter_lock:
 			response_counter=self._response_counter=self._response_counter+1
 		with self._exec_running_lock:
@@ -266,9 +272,15 @@ class Message:
 		return result
 
 	def _on_func_called(self, key: Any, args: list, kwargs: dict, response_counter: int)->None:
+		"""
+		Internal function, called when a function on this end is called.
+		"""
 		result=self._funcs[key](*args, **kwargs)
 		self.call_remote(_FUNCTION_RESPONSE, (response_counter, result), {})
 
 	def _on_func_response(self, response_counter: Any, result: Any)->None:
+		"""
+		Internal function, called when a function on the other end returns a value.
+		"""
 		self._func_response_queues[response_counter].put(result)
 
