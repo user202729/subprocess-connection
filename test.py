@@ -36,12 +36,15 @@ else:
 		# child process (test 2 -- Message)
 		message=Message()
 		from time import sleep
+
+		@message.register_func
 		def sqrt(x):
 			print("before sleep")
 			sleep(1)
 			print("after sleep")
 			return x**.5
-		message.func.sqrt=sqrt
+		#message.func.sqrt=sqrt
+
 		message.exec_()
 
 	else:

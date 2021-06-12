@@ -103,6 +103,7 @@ class Connection:
 _FUNCTION: str="_FUNCTION"
 _FUNCTION_RESPONSE: str="_FUNCTION_RESPONSE"
 
+
 class Message:
 	def __init__(self, x: Union[Connection, Popen]=None)->None:
 		if x is None:
@@ -130,6 +131,11 @@ class Message:
 			def __getattr__(self, key: Any)->Callable:
 				return lambda *args, **kwargs: message.call_remote(key, args, kwargs)
 
+			def __delitem__(self, key: Any)->None:
+				message.remove_call(key)
+
+			def __delattr__(self, key: Any)->None:
+				message.remove_call(key)
 
 		class _FuncProxy:
 			def __setitem__(self, key: Any, value: Callable)->None:
@@ -143,6 +149,12 @@ class Message:
 
 			def __getattr__(self, key: Any)->Callable:
 				return lambda *args, **kwargs: message.func_remote(key, args, kwargs)
+
+			def __delitem__(self, key: Any)->None:
+				message.remove_func(key)
+
+			def __delattr__(self, key: Any)->None:
+				message.remove_func(key)
 
 		self._call_proxy=_CallProxy()
 		self._func_proxy=_FuncProxy()
@@ -159,10 +171,24 @@ class Message:
 		self.call[_FUNCTION_RESPONSE]=self._on_func_response
 
 	def set_call(self, key: Any, value: Callable)->None:
+		assert key not in self._calls
 		self._calls[key]=value
 
 	def set_func(self, key: Any, value: Callable)->None:
+		assert key not in self._funcs
 		self._funcs[key]=value
+
+	def register_call(self, value: Callable)->None:
+		self.set_call(value.__name__, value)
+
+	def register_func(self, value: Callable)->None:
+		self.set_func(value.__name__, value)
+
+	def remove_call(self, key: Any)->None:
+		del self._calls[key]
+
+	def remove_func(self, key: Any)->None:
+		del self._funcs[key]
 
 	def exec_(self, suppress_call_errors: bool=True)->None:
 		"""
@@ -189,6 +215,7 @@ class Message:
 				try:
 					self._calls[key](*args, **kwargs)
 				except:
+					sys.stderr.write(f"Error while executing function {key}:\n")
 					if suppress_call_errors:
 						import traceback
 						traceback.print_exc()
@@ -244,3 +271,4 @@ class Message:
 
 	def _on_func_response(self, response_counter: Any, result: Any)->None:
 		self._func_response_queues[response_counter].put(result)
+
