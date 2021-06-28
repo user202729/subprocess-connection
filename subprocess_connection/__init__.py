@@ -6,6 +6,13 @@ import functools
 from subprocess import Popen
 import pickle
 from queue import Queue
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class FunctionError:
+	traceback: str
+
 
 class Connection:
 	"""
@@ -191,7 +198,8 @@ class Message:
 		`value`: the function to call. Should have the signature:
 		`(callback: CallbackFunc, args: tuple, kwargs: dict) -> None`.
 
-		It must call the callback function with the result (can be `None`).
+		It must call the callback function with the result (can be `None`)
+		and must not raise any error.
 		"""
 		if key in self._funcs:
 			raise KeyError(key)
@@ -202,8 +210,12 @@ class Message:
 
 	def set_func(self, key: Any, value: Callable)->None:
 		def wrapper(callback: Callable[[Any], None], args: tuple, kwargs: dict)->None:
-			result=value(*args, **kwargs)
-			callback(result)
+			try:
+				result=value(*args, **kwargs)
+				callback(result)
+			except:
+				import traceback
+				callback(FunctionError(traceback.format_exc()))
 		self.set_func_with_callback(key, wrapper)
 
 	def register_func(self, value: Callable)->None:
@@ -292,6 +304,10 @@ class Message:
 	def func_remote(self, key: Any, args: tuple, kwargs: dict)->Any:
 		"""
 		Call a remote function. Might or might not have callback.
+
+		If the remote function does not take a callback
+		and raise an error,
+		a RuntimeError is raised.
 		"""
 		with self._response_counter_lock:
 			response_counter=self._response_counter=self._response_counter+1
@@ -301,8 +317,15 @@ class Message:
 		assert response_counter not in self._func_response_queues
 		self._func_response_queues[response_counter]=Queue(1)
 		self.call_remote(_FUNCTION, (key, args, kwargs, response_counter), {})
-		result: Any=self._func_response_queues[response_counter].get()
+		result=self._func_response_queues[response_counter].get()
 		del self._func_response_queues[response_counter]
+		if isinstance(result, FunctionError):
+			raise RuntimeError(
+					f"Error while calling remote function {key}. Remote traceback:\n"
+					f"\n"
+					f"{result.traceback}\n"
+					f"(end remote traceback)\n"
+					)
 		return result
 
 	def _on_func_done(self, response_counter: int, result: Any)->None:
@@ -319,7 +342,8 @@ class Message:
 
 	def _on_func_response(self, response_counter: Any, result: Any)->None:
 		"""
-		Internal function, called when a function on the other end returns a value.
+		Internal function, called when a function on the other end returns
+		(with the callback function) a value.
 		"""
 		self._func_response_queues[response_counter].put(result)
 
